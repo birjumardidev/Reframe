@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { Ratelimit } from '@upstash/ratelimit';
+import { Redis } from '@upstash/redis';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -7,6 +9,14 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const allowedTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const featureKeys = ['pose', 'background', 'lighting', 'outfit'] as const;
 type FeatureKey = (typeof featureKeys)[number];
+
+// Initialize Upstash Redis Rate Limiter: Capped at 10 requests per IP address
+const ratelimit = new Ratelimit({
+  redis: Redis.fromEnv(),
+  limiter: Ratelimit.fixedWindow(10, '30 d'),
+  analytics: true,
+  prefix: '@upstash/ratelimit/testing',
+});
 
 function error(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
@@ -130,10 +140,22 @@ async function createImageEdit(original: File, prompt: string, quality: 'low' | 
 
 export async function POST(request: Request) {
   try {
+    // 1. IP Detection & Rate Limiting (10 Limits Max)
+    const ip = request.headers.get('x-forwarded-for')?.split(',')[0].trim() || '127.0.0.1';
+    const { success, remaining } = await ratelimit.limit(ip);
+
+    if (!success) {
+      return NextResponse.json(
+        { error: 'Testing limit reached: You have used all 10 free test generations allowed for your IP address.' },
+        { status: 429 }
+      );
+    }
+
+    // 2. Parse Incoming Form Data
     const form = await request.formData();
     const original = form.get('original');
     const reference = form.get('reference');
-    const selection = form.get('preserve'); // Expects JSON of selected features to copy
+    const selection = form.get('preserve');
     const qualityInput = (form.get('quality') as string) || 'low';
 
     if (!(original instanceof File) || !(reference instanceof File) || typeof selection !== 'string') {
@@ -157,13 +179,20 @@ export async function POST(request: Request) {
       ? (qualityInput as 'low' | 'medium' | 'high') 
       : 'low';
 
-    // 1. Analyze ONLY Image 2 (Reference) for selected features to copy
+    // 3. Analyze Reference Image with Gemini Vision
     const prompt = await describeReference(reference, selectedToCopy);
 
-    // 2. Pass Image 1 (Original) + Generated Prompt to GPT-Image 1.5 at Low Quality
+    // 4. Generate Image Edit with GPT Image 2 Edit (Low Quality ~$0.0123)
     const image = await createImageEdit(original, prompt, quality);
 
-    return NextResponse.json({ prompt, image }, { headers: { 'Cache-Control': 'no-store' } });
+    return NextResponse.json(
+      { 
+        prompt, 
+        image, 
+        remainingTests: remaining // Returns remaining test count (e.g., 9, 8, 7...)
+      }, 
+      { headers: { 'Cache-Control': 'no-store' } }
+    );
 
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : 'Unable to create your edit.';
@@ -171,6 +200,5 @@ export async function POST(request: Request) {
     return error(message, 500);
   }
 }
-
 
 
