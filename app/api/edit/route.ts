@@ -64,7 +64,7 @@ async function describeReference(reference: File, selectedToCopy: Record<Feature
       image_urls: [asDataUrl(reference, referenceBytes)],
       model: 'google/gemini-2.5-flash',
       temperature: 0.1, // Lower temperature for strict safety evaluation
-      max_tokens: 300,
+      max_tokens: 280,
       system_prompt: 'You are an elite AI art director and content safety reviewer. Output strictly a single image generation prompt or safety error code. No intro, analysis, or markdown.',
       prompt: `CRITICAL SAFETY PRE-SCREENING:
 Analyze this image. If it contains ANY nudity, suggestive attire (such as bikinis, swimsuits, undergarments, or heavy exposure), or sexually implicit poses, STOP IMMEDIATELY. Output strictly the exact text: CONTENT_POLICY_VIOLATION.
