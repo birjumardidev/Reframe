@@ -125,7 +125,8 @@ async function createImageEdit(original: File, prompt: string, quality: 'low' | 
       prompt: `${finalPrompt}\n\nKeep all other unmentioned details and subject facial identity intact.`,
       image_urls: [asDataUrl(original, originalBytes)],
       quality: quality, // Evaluates to 'low' (~$0.015)
-      input_fidelity: 'low' // Keeps input vision token processing cost low
+      input_fidelity: 'low', // Keeps input vision token processing cost low
+      aspect_ratio: '1:1'
     })
   });
 
