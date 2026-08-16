@@ -13,7 +13,7 @@ type FeatureKey = (typeof featureKeys)[number];
 // Initialize Upstash Redis Rate Limiter: Capped at 10 requests per IP address
 const ratelimit = new Ratelimit({
   redis: Redis.fromEnv(),
-  limiter: Ratelimit.fixedWindow(10, '30 d'),
+  limiter: Ratelimit.fixedWindow(5, '30 d'),
   analytics: false,
   prefix: '@upstash/ratelimit/testing',
 });
