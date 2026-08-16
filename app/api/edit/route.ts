@@ -14,7 +14,7 @@ type FeatureKey = (typeof featureKeys)[number];
 const ratelimit = new Ratelimit({
   redis: Redis.fromEnv(),
   limiter: Ratelimit.fixedWindow(10, '30 d'),
-  analytics: true,
+  analytics: false,
   prefix: '@upstash/ratelimit/testing',
 });
 
