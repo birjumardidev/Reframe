@@ -60,35 +60,36 @@ async function describeReference(reference: File, selectedToCopy: Record<Feature
       Authorization: `Key ${key}`,
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({
-      image_urls: [asDataUrl(reference, referenceBytes)],
-      model: 'google/gemini-2.5-flash',
-      temperature: 0.1, // Lower temperature for strict safety evaluation
-      max_tokens: 280,
-      system_prompt: 'You are an elite AI art director and content safety reviewer. Output strictly a single image generation prompt or safety error code. No intro, analysis, or markdown.',
-      prompt: `CRITICAL SAFETY PRE-SCREENING:
-Analyze this image. If it contains ANY nudity, suggestive attire (such as bikinis, swimsuits, undergarments, or heavy exposure), or sexually implicit poses, STOP IMMEDIATELY. Output strictly the exact text: CONTENT_POLICY_VIOLATION.
+body: JSON.stringify({
+  image_urls: [asDataUrl(reference, referenceBytes)],
+  model: 'google/gemini-2.5-flash',
+  temperature: 0.3,
+  max_tokens: 300, // Increased to prevent prompt truncation
+  system_prompt: 'You are an expert AI prompt engineer and visual style analyst. Output strictly a single detailed image generation prompt or CONTENT_POLICY_VIOLATION. No introduction, conversational text, or markdown formatting.',
+  prompt: `CONTENT ASSESSMENT & STYLE-ADAPTIVE PROMPT GENERATION:
 
-If the image is fully safe and non-explicit, proceed to extract its visual style and layout for "[uploaded image]".
+1. SAFETY CHECK:
+Output "CONTENT_POLICY_VIOLATION" ONLY if the image contains explicit pornography, sexually explicit content, or undergarments/swimwear.
+Note: Standard portraiture, exposed arms/shoulders, traditional garments (e.g., kurtas, sarees), art styles, and skin-tone clothing are FULLY SAFE and MUST NOT trigger a policy violation.
+
+2. STYLE IDENTIFICATION & PROMPT GENERATION (If Safe):
+Analyze the visual medium of the input image (e.g., Photographic, Anime/Manga, Oil Painting, 3D Render, Vintage Poster, Comic Book, Graphic Vector, Cyberpunk, Cinematic Still) and build a prompt using this structure:
+
+- Core Medium & Style: Identify the exact style/medium (e.g., "Makoto Shinkai anime illustration", "1970s retro film poster", "Impressionist oil painting with impasto brushstrokes", "Cinematic portrait photograph").
+- Layout & Composition: Detail layout, framing, multi-panel scrapbooks, torn paper edges, stickers, or shot angles.
+- Subject & Pose: Describe the character/subject, pose, action, and facial expression.
+- Lighting & Atmosphere: Detail light sources, color tones, backlighting, shadows, and mood (e.g., warm golden hour, vibrant neon glow, muted pastels).
+- Textures & Overlays: Specify paper textures, film grain, graphic widgets, handwriting script, or digital painterly effects.
+- Fine Details: Capture micro-details like apparel textures, accessories, jewelry, background depth, or specialized brushwork.
 
 SELECTED FEATURES TO COPY: ${copyInstruction}.
+EXCLUSION RULES: ${ignoreInstructions.length > 0 ? ignoreInstructions : 'Extract all key visual details freely.'}
 
-UNSELECTED FEATURES RULES:
-${ignoreInstructions.length > 0 ? ignoreInstructions : 'Extract all visual details freely.'}
-
-SYSTEMATIC STRUCTURE TO FOLLOW:
-1. Overall Style & Composition: Specify if it is a single shot, multi-panel collage, scrapbook, magazine cover, or UI breakdown. Describe frames, torn paper edges, paper clips, tape, white sticker borders, or grid arrangements.
-2. Graphic, Light & UI Overlays: Detail any special visual effects like neon light-writing (e.g. glowing text in hands), glassmorphism UI cards, music player graphic widgets, 3D chibi character stickers, hand-drawn doodle arrows/hearts, or bold cover headlines.
-3. Subject Framing & Pose: Detail the exact shot angle (e.g. close-up portrait, side profile, selfie pose resting head on hand) for [uploaded image].
-4. Lighting & Color Atmosphere: Describe specific light sources (e.g. rim lighting, golden hour glow, neon backlight, low-key contrast, soft studio diffuse).
-5. Styling, Optics & Fine Details: Capture micro-details such as skin texture, hair strands, jewelry (e.g. silver jhumkas), fabric patterns, shallow depth of field, creamy bokeh, and color grading.
-
-STRICT SAFETY & CONTENT POLICY RULES (CRITICAL):
-1. ZERO NSFW / SUGGESTIVE LANGUAGE: Never use words like "intimate", "sensual", "erotic", "cleavage", "bare skin", "revealing", or suggestive body descriptors. Use safe, professional terms like "warm lighting", "cinematic portrait", or "elegant aesthetic".
-2. NO BRAND NAMES OR TRADEMARKS: Do not output brand names like "Spotify", "Netflix", "Instagram", or "Kodak". Describe them generically instead (e.g., "digital music player interface", "streaming platform poster", "vintage film grain").
-3. Always refer to the target subject strictly as "[uploaded image]".
-4. DO NOT describe facial identity or specific facial structure from this reference photo.`
-    })
+STRICT CONSTRAINTS:
+- Never use terms like "sensual", "intimate", "erotic", or "bare skin". Use neutral terms like "warm aesthetic" or "cultural attire".
+- Do not use real brand or trademark names; describe visual elements generically.
+- Keep the subject description generic without inferring specific personal identities.`
+})
   });
 
   const body = await response.json();
