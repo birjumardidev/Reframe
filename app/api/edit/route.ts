@@ -10,7 +10,7 @@ const allowedTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const featureKeys = ['pose', 'background', 'lighting', 'outfit'] as const;
 type FeatureKey = (typeof featureKeys)[number];
 
-// Initialize Upstash Redis Rate Limiter: Capped at 10 requests per IP address
+// Upstash Redis Rate Limiter: Fixed 10 requests per IP address
 const ratelimit = new Ratelimit({
   redis: Redis.fromEnv(),
   limiter: Ratelimit.fixedWindow(10, '30 d'),
@@ -28,7 +28,7 @@ function asDataUrl(file: File, bytes: Buffer) {
 
 async function describeReference(reference: File, selectedToCopy: Record<FeatureKey, boolean>) {
   const key = process.env.FAL_KEY;
-  if (!key) throw new Error('Missing FAL_KEY on the server.');
+  if (!key) throw new Error('Missing FAL_KEY on the server environment variables.');
 
   const referenceBytes = Buffer.from(await reference.arrayBuffer());
   
@@ -60,13 +60,13 @@ async function describeReference(reference: File, selectedToCopy: Record<Feature
       Authorization: `Key ${key}`,
       'Content-Type': 'application/json'
     },
-body: JSON.stringify({
-  image_urls: [asDataUrl(reference, referenceBytes)],
-  model: 'google/gemini-2.5-flash',
-  temperature: 0.3,
-  max_tokens: 300, // Increased to prevent prompt truncation
-  system_prompt: 'You are an expert AI prompt engineer and visual style analyst. Output strictly a single detailed image generation prompt or CONTENT_POLICY_VIOLATION. No introduction, conversational text, or markdown formatting.',
-  prompt: `CONTENT ASSESSMENT & STYLE-ADAPTIVE PROMPT GENERATION:
+    body: JSON.stringify({
+      image_urls: [asDataUrl(reference, referenceBytes)],
+      model: 'google/gemini-2.5-flash',
+      temperature: 0.3,
+      max_tokens: 300,
+      system_prompt: 'You are an expert AI prompt engineer and visual style analyst. Output strictly a single detailed image generation prompt or CONTENT_POLICY_VIOLATION. No introduction, conversational text, or markdown formatting.',
+      prompt: `CONTENT ASSESSMENT & STYLE-ADAPTIVE PROMPT GENERATION:
 
 1. SAFETY CHECK:
 Output "CONTENT_POLICY_VIOLATION" ONLY if the image contains explicit pornography, sexually explicit content, or undergarments/swimwear.
@@ -89,18 +89,24 @@ STRICT CONSTRAINTS:
 - Never use terms like "sensual", "intimate", "erotic", or "bare skin". Use neutral terms like "warm aesthetic" or "cultural attire".
 - Do not use real brand or trademark names; describe visual elements generically.
 - Keep the subject description generic without inferring specific personal identities.`
-})
+    })
   });
 
-  const body = await response.json();
-  if (!response.ok) throw new Error(body?.error?.message || 'Reference analysis failed.');
+  const responseText = await response.text();
+  let body: any;
+  try {
+    body = JSON.parse(responseText);
+  } catch {
+    throw new Error(`Vision API error (${response.status}): ${responseText.slice(0, 100)}`);
+  }
+
+  if (!response.ok) throw new Error(body?.error?.message || body?.detail || 'Reference analysis failed.');
   
   const prompt = body?.output || body?.choices?.[0]?.message?.content;
   if (typeof prompt !== 'string' || !prompt.trim()) throw new Error('The analysis model returned no instruction.');
   
   const cleanPrompt = prompt.trim();
 
-  // Intercept Safety Trigger
   if (cleanPrompt.includes('CONTENT_POLICY_VIOLATION')) {
     throw new Error('Image contains restricted content (e.g., swimwear or explicit clothing). Please select a different image.');
   }
@@ -110,12 +116,11 @@ STRICT CONSTRAINTS:
 
 async function createImageEdit(original: File, prompt: string, quality: 'low' | 'medium' | 'high' = 'low') {
   const key = process.env.FAL_KEY;
-  if (!key) throw new Error('Missing FAL_KEY on the server.');
+  if (!key) throw new Error('Missing FAL_KEY on the server environment variables.');
 
   const originalBytes = Buffer.from(await original.arrayBuffer());
   const finalPrompt = prompt.replace(/\[uploaded image\]/gi, "the subject in the image");
 
-  // Endpoint updated to GPT-Image-2 edit
   const response = await fetch('https://fal.run/openai/gpt-image-2/edit', {
     method: 'POST',
     headers: { 
@@ -125,14 +130,21 @@ async function createImageEdit(original: File, prompt: string, quality: 'low' | 
     body: JSON.stringify({
       prompt: `${finalPrompt}\n\nKeep all other unmentioned details and subject facial identity intact.`,
       image_urls: [asDataUrl(original, originalBytes)],
-      quality: quality, // Evaluates to 'low' (~$0.015)
-      input_fidelity: 'low', // Keeps input vision token processing cost low
+      quality: quality,
+      input_fidelity: 'low',
       aspect_ratio: '1:1'
     })
   });
 
-  const body = await response.json();
-  if (!response.ok) throw new Error(body?.error?.message || 'Image generation failed.');
+  const responseText = await response.text();
+  let body: any;
+  try {
+    body = JSON.parse(responseText);
+  } catch {
+    throw new Error(`Generation API error (${response.status}): ${responseText.slice(0, 100)}`);
+  }
+
+  if (!response.ok) throw new Error(body?.error?.message || body?.detail || 'Image generation failed.');
 
   const image = body?.images?.[0]?.url;
   if (typeof image !== 'string') throw new Error('The image model returned no output URL.');
@@ -142,8 +154,13 @@ async function createImageEdit(original: File, prompt: string, quality: 'low' | 
 
 export async function POST(request: Request) {
   try {
-    // 1. IP Detection & Rate Limiting (10 Limits Max)
-    const ip = request.headers.get('x-forwarded-for')?.split(',')[0].trim() || '127.0.0.1';
+    // 1. Robust IP Detection for Desktop + Mobile Carriers (Cloudflare, Vercel proxies)
+    const ip = 
+      request.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
+      request.headers.get('x-real-ip') ||
+      request.headers.get('cf-connecting-ip') ||
+      '127.0.0.1';
+
     const { success, remaining } = await ratelimit.limit(ip);
 
     if (!success) {
@@ -153,7 +170,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // 2. Parse Incoming Form Data
+    // 2. Parse Form Data
     const form = await request.formData();
     const original = form.get('original');
     const reference = form.get('reference');
@@ -181,17 +198,17 @@ export async function POST(request: Request) {
       ? (qualityInput as 'low' | 'medium' | 'high') 
       : 'low';
 
-    // 3. Analyze Reference Image with Gemini Vision
+    // 3. Vision Analysis
     const prompt = await describeReference(reference, selectedToCopy);
 
-    // 4. Generate Image Edit with GPT Image 2 Edit (Low Quality ~$0.0123)
+    // 4. Image Edit Generation
     const image = await createImageEdit(original, prompt, quality);
 
     return NextResponse.json(
       { 
         prompt, 
         image, 
-        remainingTests: remaining // Returns remaining test count (e.g., 9, 8, 7...)
+        remainingTests: remaining 
       }, 
       { headers: { 'Cache-Control': 'no-store' } }
     );
@@ -202,5 +219,3 @@ export async function POST(request: Request) {
     return error(message, 500);
   }
 }
-
-
