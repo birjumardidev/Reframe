@@ -86,6 +86,7 @@ SELECTED FEATURES TO COPY: ${copyInstruction}.
 EXCLUSION RULES: ${ignoreInstructions.length > 0 ? ignoreInstructions : 'Extract all key visual details freely.'}
 
 STRICT CONSTRAINTS:
+- Always refer to the target subject strictly as "[uploaded image]", example - "cinematic portrait of [uploaded image] in this .." .
 - Never use terms like "sensual", "intimate", "erotic", or "bare skin". Use neutral terms like "warm aesthetic" or "cultural attire".
 - Do not use real brand or trademark names; describe visual elements generically.
 - Keep the subject description generic without inferring specific personal identities.`
